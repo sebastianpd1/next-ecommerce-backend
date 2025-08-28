@@ -1,49 +1,28 @@
 import express from "express";
 import cors from "cors";
-import { Low } from "lowdb";
-import { JSONFile } from "lowdb/node";
-
-console.log("Iniciando servidor...");
+import connectDB from "./db/connect.js";
+import productsRouter from "./routes/products.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-
-const adapter = new JSONFile("db.json");
-const db = new Low(adapter, { products: [] });
-
-await db.read();
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/products", productsRouter);
 
-app.get("/api/products", async (req, res) => {
-  await db.read();
-  res.json(db.data.products);
+app.get("/", (req, res) => {
+  res.send("API funcionando correctamente");
 });
 
-app.get("/api/products/:id", async (req, res) => {
-  const { id } = req.params;
-  await db.read();
-  const product = db.data.products.find((p) => p.id === id);
-  if (product) res.json(product);
-  else res.status(404).json({ error: "Producto no encontrado" });
-});
-
-app.post("/sync", async (req, res) => {
-  const incomingProducts = req.body;
-
-  if (!Array.isArray(incomingProducts)) {
-    return res
-      .status(400)
-      .json({ error: "Formato inválido, debe ser un array de productos" });
+const startServer = async () => {
+  try {
+    await connectDB();
+    app.listen(PORT, () => {
+      console.log(`Servidor corriendo en http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error("Error al iniciar el servidor:", error);
   }
+};
 
-  db.data.products = incomingProducts;
-  await db.write();
-
-  res.json({ success: true, count: incomingProducts.length });
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Backend API corriendo en http://localhost:${PORT}`);
-});
+startServer();
