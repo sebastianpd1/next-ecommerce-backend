@@ -1,28 +1,48 @@
+// server.js
 import express from "express";
-import cors from "cors";
-import connectDB from "./db/connect.js";
-import productsRouter from "./routes/products.js";
+import mongoose from "mongoose";
+
+import productsRoutes from "./routes/products.js";
+import printersRoutes from "./routes/printers.js";
+import sliderRoutes from "./routes/sliders.js";
+import announcementsRoutes from "./routes/announcements.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json());
-app.use("/api/products", productsRouter);
+// Body parser (sube el límite si mandas arrays grandes)
+app.use(express.json({ limit: "10mb" }));
 
-app.get("/", (req, res) => {
-  res.send("API funcionando correctamente");
-});
+// Rutas
+app.use("/api/products", productsRoutes);
+app.use("/api/printers", printersRoutes);
+app.use("/api/slider", sliderRoutes);
+app.use("/api/announcements", announcementsRoutes);
 
-const startServer = async () => {
-  try {
-    await connectDB();
-    app.listen(PORT, () => {
-      console.log(`Servidor corriendo en http://localhost:${PORT}`);
-    });
-  } catch (error) {
-    console.error("Error al iniciar el servidor:", error);
+// (Opcional) Healthcheck simple
+app.get("/health", (_req, res) => res.status(200).send("ok"));
+
+// ENV
+const MONGO_URI = process.env.MONGO_URI; // p.ej. ...mongodb.net/ecommerce?...  (recomendado)
+const MONGO_DB = process.env.MONGO_DB || ""; // opcional si prefieres pasar dbName aquí
+const PORT = process.env.PORT || 4000;
+
+async function start() {
+  if (!MONGO_URI) {
+    console.error("❌ Falta MONGO_URI en variables de entorno");
+    process.exit(1);
   }
-};
 
-startServer();
+  // Conexión MongoDB
+  if (MONGO_DB) {
+    await mongoose.connect(MONGO_URI, { dbName: MONGO_DB });
+  } else {
+    await mongoose.connect(MONGO_URI); // si la URI ya trae el nombre de la DB (recomendado)
+  }
+  console.log("✅ Conectado a MongoDB");
+
+  app.listen(PORT, () => {
+    console.log(`🚀 API lista en http://localhost:${PORT}`);
+  });
+}
+
+start();

@@ -5,6 +5,6 @@ import { requireApiKey } from "../middleware/auth.js";
 const router = express.Router();
 
 router.post("/", requireApiKey, addProduct);
-router.get("/", getProducts);
+router.get("/", requireApiKey, getProducts);
 
 export default router;
