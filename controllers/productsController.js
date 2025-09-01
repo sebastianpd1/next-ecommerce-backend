@@ -57,6 +57,20 @@ export const getProducts = async (req, res) => {
     res.status(500).json({ message: "Error al obtener productos" });
   }
 };
+export const deleteProduct = async (req, res) => {
+  try {
+    const { titulo } = req.query; // ?titulo=...
+    if (!titulo) return res.status(400).json({ message: "Falta titulo" });
+
+    const r = await Product.deleteOne({ titulo });
+    if (r.deletedCount === 0)
+      return res.status(404).json({ message: "No encontrado" });
+
+    res.status(200).json({ message: "Producto borrado" });
+  } catch (e) {
+    res.status(500).json({ message: "Error al borrar producto" });
+  }
+};
 
 // // controllers/productsController.js
 // import Product from "../models/Product.js";

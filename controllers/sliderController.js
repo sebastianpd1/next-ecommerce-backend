@@ -25,11 +25,9 @@ export const addSliderImages = async (req, res) => {
       { $set: payload },
       { upsert: true }
     );
-    res
-      .status(201)
-      .json({
-        message: r.upsertedCount ? "Imagen creada." : "Imagen actualizada.",
-      });
+    res.status(201).json({
+      message: r.upsertedCount ? "Imagen creada." : "Imagen actualizada.",
+    });
   } catch (error) {
     if (error?.code === 11000) {
       return res
@@ -49,5 +47,19 @@ export const getSliderImages = async (_req, res) => {
     res.status(200).json(data);
   } catch {
     res.status(500).json({ message: "Error al obtener slider" });
+  }
+};
+export const deleteSliderImage = async (req, res) => {
+  try {
+    const { fmId } = req.query; // ?fmId=...
+    if (!fmId) return res.status(400).json({ message: "Falta fmId" });
+
+    const r = await SliderImage.deleteOne({ fmId });
+    if (r.deletedCount === 0)
+      return res.status(404).json({ message: "No encontrado" });
+
+    res.status(200).json({ message: "Imagen de slider borrada" });
+  } catch {
+    res.status(500).json({ message: "Error al borrar slider" });
   }
 };

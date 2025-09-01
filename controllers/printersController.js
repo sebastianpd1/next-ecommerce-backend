@@ -50,3 +50,17 @@ export const getPrinters = async (req, res) => {
     res.status(500).json({ message: "Error al obtener impresoras" });
   }
 };
+export const deletePrinter = async (req, res) => {
+  try {
+    const { fmId } = req.query; // ?fmId=...
+    if (!fmId) return res.status(400).json({ message: "Falta fmId" });
+
+    const r = await Printer.deleteOne({ fmId });
+    if (r.deletedCount === 0)
+      return res.status(404).json({ message: "No encontrado" });
+
+    res.status(200).json({ message: "Impresora borrada" });
+  } catch {
+    res.status(500).json({ message: "Error al borrar impresora" });
+  }
+};
