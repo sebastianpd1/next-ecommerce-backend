@@ -7,6 +7,10 @@ import printersRoutes from "./routes/printers.js";
 import sliderRoutes from "./routes/sliders.js";
 import announcementsRoutes from "./routes/announcements.js";
 
+// importa los modelos que tienen índices definidos
+import Product from "./models/Product.js";
+import Printer from "./models/Printer.js";
+
 const app = express();
 
 // Body parser (sube el límite si mandas arrays grandes)
@@ -18,31 +22,35 @@ app.use("/api/printers", printersRoutes);
 app.use("/api/slider", sliderRoutes);
 app.use("/api/announcements", announcementsRoutes);
 
-// (Opcional) Healthcheck simple
+// Healthcheck
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 // ENV
-const MONGO_URI = process.env.MONGO_URI; // p.ej. ...mongodb.net/ecommerce?...  (recomendado)
-const MONGO_DB = process.env.MONGO_DB || ""; // opcional si prefieres pasar dbName aquí
+const MONGO_URI = process.env.MONGO_URI; // IMPORTANTE: con nombre de DB en la URI
 const PORT = process.env.PORT || 4000;
 
 async function start() {
-  if (!MONGO_URI) {
-    console.error("❌ Falta MONGO_URI en variables de entorno");
+  try {
+    if (!MONGO_URI) {
+      console.error("❌ Falta MONGO_URI");
+      process.exit(1);
+    }
+
+    await mongoose.connect(MONGO_URI);
+    console.log("✅ MongoDB conectado");
+
+    // 🔧 Crear índices si la variable está activada
+    if (process.env.BUILD_INDEXES === "true") {
+      console.log("🔧 Creando índices...");
+      await Promise.all([Product.syncIndexes(), Printer.syncIndexes()]);
+      console.log("✅ Índices listos");
+    }
+
+    app.listen(PORT, () => console.log(`🚀 API escuchando en ${PORT}`));
+  } catch (err) {
+    console.error("❌ Error al iniciar servidor:", err);
     process.exit(1);
   }
-
-  // Conexión MongoDB
-  if (MONGO_DB) {
-    await mongoose.connect(MONGO_URI, { dbName: MONGO_DB });
-  } else {
-    await mongoose.connect(MONGO_URI); // si la URI ya trae el nombre de la DB (recomendado)
-  }
-  console.log("✅ Conectado a MongoDB");
-
-  app.listen(PORT, () => {
-    console.log(`🚀 API lista en http://localhost:${PORT}`);
-  });
 }
 
 start();

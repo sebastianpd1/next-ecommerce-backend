@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const announcementSchema = new mongoose.Schema(
   {
-    fmId: { type: String, required: true, unique: true }, // <- ID serial de FileMaker
+    fmId: { type: String, required: true, unique: true },
     text: { type: String, required: true },
     startsAt: { type: Date, default: Date.now },
     endsAt: { type: Date },
@@ -12,6 +12,6 @@ const announcementSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-announcementSchema.index({ isActive: 1, startsAt: 1, endsAt: 1 });
+// ❌ sin índices extra
 
 export default mongoose.model("Announcement", announcementSchema);

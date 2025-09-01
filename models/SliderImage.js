@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const sliderImageSchema = new mongoose.Schema(
   {
-    fmId: { type: String, required: true, unique: true }, // <- ID serial de FileMaker
+    fmId: { type: String, required: true, unique: true },
     imageUrl: { type: String, required: true },
     title: String,
     caption: String,
@@ -13,6 +13,6 @@ const sliderImageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-sliderImageSchema.index({ order: 1 });
+// ❌ sin índices extra
 
 export default mongoose.model("SliderImage", sliderImageSchema);

@@ -9,7 +9,7 @@ import { requireApiKey } from "../middleware/auth.js";
 const router = express.Router();
 
 // Protege también GET para no exponer catálogo completo
-router.get("/", getPrinters);
+router.get("/", requireApiKey, getPrinters);
 router.post("/", requireApiKey, addPrinters);
 router.delete("/", requireApiKey, deletePrinter);
 

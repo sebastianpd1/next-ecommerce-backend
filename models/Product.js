@@ -1,56 +1,37 @@
-// models/Product.js
 import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
   {
-    id: String, // opcional si te llega desde FileMaker
-    titulo: { type: String, required: true }, // será único vía índice
+    id: String,
+    titulo: { type: String, required: true },
     modelo: String,
     NroParte: String,
     marca: String,
     precio: Number,
     descripcion: String,
+
+    // igual que lo tenías: array de objetos con sku, stock, color...
     productos: [
       {
-        sku: String, // puede repetirse entre documentos
+        sku: String,
         stockRenca: Number,
         stockAgustinas: Number,
         color: String,
       },
     ],
+
+    // IDs de impresoras compatibles (fmId)
+    compatibles: [String],
+
     fotos: [String],
   },
   { timestamps: true }
 );
 
-// índice único por título
-productSchema.index({ titulo: 1 }, { unique: true });
+/** Índices necesarios **/
+productSchema.index({ "productos.sku": 1 }); // búsqueda por SKU
+productSchema.index({ NroParte: 1 }); // búsqueda por número de parte
+productSchema.index({ compatibles: 1 }); // búsqueda por impresoras (multi-key)
+productSchema.index({ marca: 1 }); // búsqueda por marca
 
-const Product = mongoose.model("Product", productSchema);
-export default Product;
-
-// // models/Product.js
-// import mongoose from "mongoose";
-
-// const productSchema = new mongoose.Schema({
-//   id: String,
-//   titulo: String,
-//   modelo: String,
-//   NroParte: String,
-//   marca: String,
-//   precio: Number,
-//   descripcion: String,
-//   productos: [
-//     {
-//       sku: String,
-//       stockRenca: Number,
-//       stockAgustinas: Number,
-//       color: String,
-//     },
-//   ],
-//   fotos: [String],
-// });
-
-// const Product = mongoose.model("Product", productSchema);
-
-// export default Product;
+export default mongoose.model("Product", productSchema);

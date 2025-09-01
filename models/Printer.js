@@ -1,9 +1,8 @@
-// models/Printer.js
 import mongoose from "mongoose";
 
 const printerSchema = new mongoose.Schema(
   {
-    fmId: { type: String, required: true, unique: true }, // <- ID serial de FileMaker
+    fmId: { type: String, required: true, unique: true },
     marca: { type: String, required: true },
     modelo: { type: String, required: true },
     tipo: String,
@@ -13,15 +12,19 @@ const printerSchema = new mongoose.Schema(
     precio: Number,
     voltage: String,
     scanner: Boolean,
-    velocidad: String, // ej: "30 ppm"
+    velocidad: String,
     toner: String,
     drum: String,
-    rendimiento: String, // ej: "1500 páginas"
-    garantia: String, // ej: "6 meses"
+    rendimiento: String,
+    garantia: String,
     stock: Number,
-    foto: String, // o [String] si necesitas varias
+    foto: String,
   },
   { timestamps: true }
 );
+
+/** Índices para impresoras **/
+printerSchema.index({ marca: 1 });
+printerSchema.index({ modelo: 1 });
 
 export default mongoose.model("Printer", printerSchema);

@@ -9,7 +9,7 @@ import { requireApiKey } from "../middleware/auth.js";
 const router = express.Router();
 
 // También protegido si no quieres que lo lean sin clave
-router.get("/", getActiveAnnouncements);
+router.get("/", requireApiKey, getActiveAnnouncements);
 router.post("/", requireApiKey, addAnnouncements);
 router.delete("/", requireApiKey, deleteAnnouncement);
 

@@ -48,15 +48,21 @@ export const addProduct = async (req, res) => {
     return res.status(500).json({ message: "Error en el servidor" });
   }
 };
-
 export const getProducts = async (req, res) => {
   try {
-    const products = await Product.find().lean();
+    const { sku, NroParte, printerFmId } = req.query;
+    const q = {};
+    if (sku) q["productos.sku"] = sku; // usa índice
+    if (NroParte) q.NroParte = NroParte; // usa índice
+    if (printerFmId) q.compatibles = printerFmId; // usa índice (multi-key)
+
+    const products = await Product.find(q).lean();
     res.status(200).json(products);
   } catch (error) {
     res.status(500).json({ message: "Error al obtener productos" });
   }
 };
+
 export const deleteProduct = async (req, res) => {
   try {
     const { titulo } = req.query; // ?titulo=...

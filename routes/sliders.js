@@ -9,7 +9,7 @@ import { requireApiKey } from "../middleware/auth.js";
 const router = express.Router();
 
 // Si quieres ocultar el slider hasta que lo consumas vía SSR, también protégelo
-router.get("/", getSliderImages);
+router.get("/", requireApiKey, getSliderImages);
 router.post("/", requireApiKey, addSliderImages);
 router.delete("/", requireApiKey, deleteSliderImage);
 
