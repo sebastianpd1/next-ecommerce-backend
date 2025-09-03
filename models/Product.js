@@ -1,4 +1,13 @@
 import mongoose from "mongoose";
+const compatibleSchema = new mongoose.Schema(
+  {
+    sku: String,
+    marca: String,
+    impresora: String,
+    categoria: String,
+  },
+  { _id: false } // para que no genere _id en cada compatible
+);
 
 const productSchema = new mongoose.Schema(
   {
