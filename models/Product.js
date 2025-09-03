@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+// Sub-schema de compatibles (no crea _id por ítem)
 const compatibleSchema = new mongoose.Schema(
   {
     sku: String,
@@ -10,6 +11,7 @@ const compatibleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Sub-schema de productos (no crea _id por ítem)
 const itemSchema = new mongoose.Schema(
   {
     sku: String,
@@ -30,17 +32,17 @@ const productSchema = new mongoose.Schema(
     precio: Number,
     descripcion: String,
 
-    productos: [itemSchema], // array de objetos (sin _id por ítem)
-    compatibles: [compatibleSchema], // ahora objetos completos
+    productos: [itemSchema],
+    compatibles: [compatibleSchema],
     fotos: [String],
   },
   { timestamps: true }
 );
 
 /** Índices útiles **/
-productSchema.index({ "productos.sku": 1 }); // búsqueda por SKU interno
-productSchema.index({ NroParte: 1 }); // búsqueda por número de parte
-productSchema.index({ "compatibles.sku": 1 }); // búsqueda por SKU compatible
+productSchema.index({ "productos.sku": 1 });
+productSchema.index({ NroParte: 1 });
+productSchema.index({ "compatibles.sku": 1 });
 productSchema.index({ "compatibles.impresora": 1 });
 productSchema.index({ "compatibles.marca": 1 });
 productSchema.index({ marca: 1 });
