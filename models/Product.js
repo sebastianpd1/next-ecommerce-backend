@@ -21,7 +21,7 @@ const productSchema = new mongoose.Schema(
     ],
 
     // IDs de impresoras compatibles (fmId)
-    compatibles: [String],
+    compatibles: [compatibleSchema],
 
     fotos: [String],
   },
