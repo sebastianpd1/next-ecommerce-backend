@@ -6,6 +6,7 @@ import productsRoutes from "./routes/products.js";
 import printersRoutes from "./routes/printers.js";
 import sliderRoutes from "./routes/sliders.js";
 import announcementsRoutes from "./routes/announcements.js";
+import productByIdRoute from "./routes/product-by-id.js";
 
 // importa los modelos que tienen índices definidos
 import Product from "./models/Product.js";
@@ -21,6 +22,7 @@ app.use("/api/products", productsRoutes);
 app.use("/api/printers", printersRoutes);
 app.use("/api/slider", sliderRoutes);
 app.use("/api/announcements", announcementsRoutes);
+app.use("/api/products", productByIdRoute);
 
 // Healthcheck
 app.get("/health", (_req, res) => res.status(200).send("ok"));
