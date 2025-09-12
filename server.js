@@ -12,6 +12,11 @@ import productByIdRoute from "./routes/product-by-id.js";
 import Product from "./models/Product.js";
 import Printer from "./models/Printer.js";
 
+// importa Mercado pago
+
+import mpRoutes from "./routes/pay.mercadopago.js";
+import mpWebhook from "./routes/webhooks.mercadopago.js";
+
 const app = express();
 
 // Body parser (sube el límite si mandas arrays grandes)
@@ -23,6 +28,8 @@ app.use("/api/printers", printersRoutes);
 app.use("/api/slider", sliderRoutes);
 app.use("/api/announcements", announcementsRoutes);
 app.use("/api/products", productByIdRoute);
+app.use("/api/pay/mercadopago", mpRoutes);
+app.use("/api/webhooks/mercadopago", mpWebhook);
 
 // Healthcheck
 app.get("/health", (_req, res) => res.status(200).send("ok"));
