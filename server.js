@@ -2,6 +2,8 @@
 import express from "express";
 import mongoose from "mongoose";
 
+import trackingRoutes from "./routes/public.tracking.js";
+import ordersRoutes from "./routes/orders.js";
 import productsRoutes from "./routes/products.js";
 import printersRoutes from "./routes/printers.js";
 import sliderRoutes from "./routes/sliders.js";
@@ -30,6 +32,8 @@ app.use("/api/announcements", announcementsRoutes);
 app.use("/api/products", productByIdRoute);
 app.use("/api/pay/mercadopago", mpRoutes);
 app.use("/api/webhooks/mercadopago", mpWebhook);
+app.use("/api/orders", ordersRoutes);
+app.use("/api/public/tracking", trackingRoutes); // público: sin x-api-key
 
 // Healthcheck
 app.get("/health", (_req, res) => res.status(200).send("ok"));
