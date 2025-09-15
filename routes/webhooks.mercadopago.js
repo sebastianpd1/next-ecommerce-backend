@@ -12,7 +12,6 @@ router.post("/", async (req, res) => {
       return res.status(200).json({ ok: true, ignored: true });
     }
 
-    // Consulta de pago
     const r = await fetch(
       `https://api.mercadopago.com/v1/payments/${data.id}`,
       {
@@ -21,7 +20,7 @@ router.post("/", async (req, res) => {
     );
     const payment = await r.json();
 
-    const status = payment?.status; // approved | pending | rejected | ...
+    const status = payment?.status; // approved | pending | rejected ...
     const external_reference = payment?.external_reference;
     const paidAmount = Number(payment?.transaction_amount || 0);
 
@@ -31,14 +30,11 @@ router.post("/", async (req, res) => {
     const order = await Order.findById(external_reference);
     if (!order) return res.status(200).json({ ok: true, noOrder: true });
 
-    // Idempotencia: si ya está PAID, solo confirma
     if (order.status === "PAID")
       return res.status(200).json({ ok: true, alreadyPaid: true });
 
-    // Validación de monto (básica)
     if (status === "approved") {
       if (Math.round(order.total) !== Math.round(paidAmount)) {
-        // Montos no cuadran → marca FAILED y guarda raw
         await Order.findByIdAndUpdate(order._id, {
           status: "FAILED",
           payment: {
@@ -49,7 +45,6 @@ router.post("/", async (req, res) => {
         return res.status(200).json({ ok: true, mismatch: true });
       }
 
-      // Marca PAID
       await Order.findByIdAndUpdate(order._id, {
         status: "PAID",
         payment: {
@@ -58,8 +53,7 @@ router.post("/", async (req, res) => {
         },
       });
 
-      // TODO: emitir DTE con TÜU aquí (services/tuu.js) y descontar stock
-      // try { await issueDTE(order) } catch (e) { /* log */ }
+      // TODO: emitir DTE (TÜU) y descontar stock
     } else if (status === "rejected") {
       await Order.findByIdAndUpdate(order._id, {
         status: "FAILED",
@@ -69,7 +63,6 @@ router.post("/", async (req, res) => {
         },
       });
     } else {
-      // pending / in_process → solo guarda estado
       await Order.findByIdAndUpdate(order._id, {
         status: "UNPAID",
         payment: {

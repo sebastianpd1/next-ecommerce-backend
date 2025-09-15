@@ -2,6 +2,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import { requireApiKey } from "../middleware/auth.js";
+import Order from "../models/Order.js";
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ function escapeRx(s) {
 async function findProductByTitle(title) {
   const col = mongoose.connection.collection("products");
   const rx = new RegExp(`^${escapeRx(title.trim())}$`, "i");
-  return await col.findOne({ titulo: rx });
+  return await col.findOne({ titulo: rx }); // usamos p.precio
 }
 
 // POST /api/pay/mercadopago/preference
@@ -54,25 +55,17 @@ router.post("/preference", requireApiKey, async (req, res) => {
 
     const total = lines.reduce((s, l) => s + l.price * l.qty, 0);
 
-    // Crea Order UNPAID (colección directa, sin modelo)
-    const ordersCol = mongoose.connection.collection("orders");
-    const now = new Date();
-    const orderDoc = {
+    // Crea Order UNPAID con el modelo
+    const order = await Order.create({
       status: "UNPAID",
       currency: "CLP",
       total,
       lines,
       customer,
       shipping,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const { insertedId } = await ordersCol.insertOne(orderDoc);
-    const orderId = String(insertedId);
-    await ordersCol.updateOne(
-      { _id: insertedId },
-      { $set: { external_reference: orderId } }
-    );
+    });
+    const orderId = String(order._id);
+    await Order.findByIdAndUpdate(orderId, { external_reference: orderId });
 
     // Arma preference
     const mpItems = lines.map((l) => ({

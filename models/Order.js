@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 
 const LineSchema = new mongoose.Schema(
   {
-    sku: { type: String, required: true },
+    sku: String,
     title: { type: String, required: true },
     price: { type: Number, required: true }, // CLP
     qty: { type: Number, required: true, min: 1 },
@@ -21,9 +21,9 @@ const OrderSchema = new mongoose.Schema(
     currency: { type: String, default: "CLP" },
     total: { type: Number, default: 0 },
     lines: { type: [LineSchema], default: [] },
-    external_reference: { type: String }, // igual a _id string que mandamos a MP
+    external_reference: String, // igual al _id en string
     payment: {
-      provider: { type: String }, // "mercadopago"
+      provider: String, // "mercadopago"
       mp: {
         id: String,
         status: String,
