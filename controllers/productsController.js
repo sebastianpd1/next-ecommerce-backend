@@ -1,6 +1,7 @@
 // controllers/productsController.js
 import Product from "../models/Product.js";
 
+/** Crea/actualiza productos (FM) */
 export const addProduct = async (req, res) => {
   try {
     const payload = req.body;
@@ -48,21 +49,56 @@ export const addProduct = async (req, res) => {
     return res.status(500).json({ message: "Error en el servidor" });
   }
 };
+
+/** Listado — por defecto solo productos con stock > 0 */
 export const getProducts = async (req, res) => {
   try {
-    const { sku, NroParte, printerFmId } = req.query;
+    const {
+      sku,
+      NroParte,
+      printerFmId,
+      limit = 48,
+      include_out_of_stock,
+    } = req.query;
+
     const q = {};
     if (sku) q["productos.sku"] = sku; // usa índice
     if (NroParte) q.NroParte = NroParte; // usa índice
-    if (printerFmId) q.compatibles = printerFmId; // usa índice (multi-key)
+    if (printerFmId) q.compatibles = printerFmId; // conservamos tu filtro existente
+    if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo = stock > 0
 
-    const products = await Product.find(q).lean();
-    res.status(200).json(products);
+    const lim = Math.min(parseInt(limit, 10) || 48, 5000);
+
+    const products = await Product.find(q)
+      .sort({ updatedAt: -1 })
+      .limit(lim)
+      .lean();
+
+    return res.status(200).json(products);
   } catch (error) {
-    res.status(500).json({ message: "Error al obtener productos" });
+    return res.status(500).json({ message: "Error al obtener productos" });
   }
 };
 
+/** Detalle por id externo — por defecto solo si stock > 0 */
+export const getProductById = async (req, res) => {
+  try {
+    const { include_out_of_stock } = req.query;
+    const { id } = req.params;
+
+    const base = { id: String(id) };
+    const filter = include_out_of_stock ? base : { ...base, stock: { $gt: 0 } };
+
+    const doc = await Product.findOne(filter).lean();
+    if (!doc) return res.status(404).json({ error: "no encontrado" });
+
+    return res.status(200).json(doc);
+  } catch (e) {
+    return res.status(500).json({ message: "Error al obtener producto" });
+  }
+};
+
+/** Borrado por título */
 export const deleteProduct = async (req, res) => {
   try {
     const { titulo } = req.query; // ?titulo=...
@@ -72,42 +108,8 @@ export const deleteProduct = async (req, res) => {
     if (r.deletedCount === 0)
       return res.status(404).json({ message: "No encontrado" });
 
-    res.status(200).json({ message: "Producto borrado" });
+    return res.status(200).json({ message: "Producto borrado" });
   } catch (e) {
-    res.status(500).json({ message: "Error al borrar producto" });
+    return res.status(500).json({ message: "Error al borrar producto" });
   }
 };
-
-// // controllers/productsController.js
-// import Product from "../models/Product.js";
-
-// export const addProduct = async (req, res) => {
-//   try {
-//     const payload = req.body;
-
-//     if (Array.isArray(payload)) {
-//       // Si recibimos un array desde FileMaker
-//       const result = await Product.insertMany(payload);
-//       return res.status(201).json({
-//         message: `Se guardaron ${result.length} productos correctamente.`,
-//       });
-//     }
-
-//     // Si recibimos un solo producto
-//     const newProduct = new Product(payload);
-//     await newProduct.save();
-//     res.status(201).json({ message: "Producto guardado correctamente." });
-//   } catch (error) {
-//     console.error("❌ Error al guardar producto:", error);
-//     res.status(500).json({ message: "Error en el servidor", error });
-//   }
-// };
-
-// export const getProducts = async (req, res) => {
-//   try {
-//     const products = await Product.find();
-//     res.status(200).json(products);
-//   } catch (error) {
-//     res.status(500).json({ message: "Error al obtener productos", error });
-//   }
-// };
