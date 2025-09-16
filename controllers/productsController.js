@@ -1,17 +1,90 @@
 // controllers/productsController.js
 import Product from "../models/Product.js";
 
-/** Crea/actualiza productos (FM) */
+/**
+ * Normaliza el payload proveniente de FileMaker a nuestro modelo:
+ * - sku: si hay auxiliar (item.sku y no es el placeholder) úsalo; si no, usa productos[0].sku.
+ * - productos: mapea kitsPivot a [{ sku, color }] filtrando vacíos.
+ * - compatibles: mantiene [{ sku, marca, impresora, categoria }] (sin tocar otras props).
+ * - stock/precio: fuerza a Number (acepta "2" como string).
+ */
+function normalizeItem(item) {
+  const AUX_PLACEHOLDER = "SKU_AUXILIAR_KITS_SI_NO_ES_KIT_ESTO_VACIO";
+
+  const auxSkuRaw = (item?.sku ?? "").trim();
+  const auxSku = auxSkuRaw && auxSkuRaw !== AUX_PLACEHOLDER ? auxSkuRaw : "";
+
+  const productos = Array.isArray(item?.productos)
+    ? item.productos
+        .map((x) => {
+          const sku = (x?.sku ?? "").trim();
+          const color = typeof x?.color === "string" ? x.color : undefined;
+          return sku ? { sku, ...(color ? { color } : {}) } : null;
+        })
+        .filter(Boolean)
+    : [];
+
+  const canonicalSku = auxSku || productos[0]?.sku || "";
+  if (!canonicalSku) {
+    const t = item?.titulo || "(sin titulo)";
+    throw new Error(
+      `SKU requerido para "${t}": envía sku auxiliar o productos[0].sku`
+    );
+  }
+
+  const stockNum =
+    typeof item?.stock === "number" ? item.stock : Number(item?.stock ?? 0);
+  const precioNum =
+    typeof item?.precio === "number" ? item.precio : Number(item?.precio ?? 0);
+
+  const compatibles = Array.isArray(item?.compatibles)
+    ? item.compatibles.map((c) => ({
+        sku: typeof c?.sku === "string" ? c.sku : undefined,
+        marca: typeof c?.marca === "string" ? c.marca : undefined,
+        impresora: typeof c?.impresora === "string" ? c.impresora : undefined,
+        categoria: typeof c?.categoria === "string" ? c.categoria : undefined,
+      }))
+    : [];
+
+  const fotos = Array.isArray(item?.fotos) ? item.fotos : [];
+
+  return {
+    id: item?.id ?? undefined,
+    titulo: item?.titulo,
+    modelo: item?.modelo ?? undefined,
+    NroParte: item?.NroParte ?? undefined,
+    marca: item?.marca ?? undefined,
+    precio: Number.isFinite(precioNum) ? precioNum : 0,
+
+    // clave de venta
+    sku: canonicalSku,
+
+    // stock global (activo si > 0)
+    stock: Number.isFinite(stockNum) ? stockNum : 0,
+
+    descripcion: item?.descripcion ?? undefined,
+
+    // subtablas
+    productos, // kitsPivot normalizado
+    compatibles, // compatibilidades (no se usan para el checkout)
+
+    fotos,
+  };
+}
+
+/** Crea/actualiza productos (FileMaker) */
 export const addProduct = async (req, res) => {
   try {
     const payload = req.body;
 
-    // Array desde FileMaker: bulk upsert por titulo (el payload debe traer 'sku' único)
+    // Array: bulk upsert por título
     if (Array.isArray(payload)) {
-      const bulkOps = payload.map((item) => ({
+      const docs = payload.map(normalizeItem);
+
+      const bulkOps = docs.map((doc) => ({
         updateOne: {
-          filter: { titulo: item.titulo },
-          update: { $set: item },
+          filter: { titulo: doc.titulo },
+          update: { $set: doc },
           upsert: true,
         },
       }));
@@ -20,17 +93,18 @@ export const addProduct = async (req, res) => {
 
       return res.status(201).json({
         message: `Procesados ${
-          result.modifiedCount + result.upsertedCount
+          (result.modifiedCount || 0) + (result.upsertedCount || 0)
         } productos.`,
         created: result.upsertedCount || 0,
         updated: result.modifiedCount || 0,
       });
     }
 
-    // Un solo producto: upsert por titulo
+    // Uno: upsert por título
+    const doc = normalizeItem(payload);
     const r = await Product.updateOne(
-      { titulo: payload.titulo },
-      { $set: payload },
+      { titulo: doc.titulo },
+      { $set: doc },
       { upsert: true }
     );
 
@@ -44,8 +118,9 @@ export const addProduct = async (req, res) => {
         keyValue: error.keyValue,
       });
     }
-    console.error("❌ Error al guardar producto:", error);
-    return res.status(500).json({ message: "Error en el servidor" });
+    return res
+      .status(500)
+      .json({ message: String(error?.message || "Error en el servidor") });
   }
 };
 
@@ -56,17 +131,17 @@ export const getProducts = async (req, res) => {
       sku,
       NroParte,
       printerFmId,
-      limit = 48,
+      limit = 12,
       include_out_of_stock,
     } = req.query;
 
     const q = {};
-    if (sku) q.sku = sku; // ahora es campo plano
-    if (NroParte) q.NroParte = NroParte;
-    if (printerFmId) q.compatibles = printerFmId; // se mantiene tu filtro existente
+    if (sku) q.sku = sku; // campo top-level
+    if (NroParte) q.NroParte = NroParte; // índice existente
+    if (printerFmId) q["compatibles.impresora"] = printerFmId; // usa índice compatibilidades
     if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo = stock > 0
 
-    const lim = Math.min(parseInt(limit, 10) || 48, 5000);
+    const lim = Math.min(parseInt(limit, 10) || 12, 5000);
 
     const products = await Product.find(q)
       .sort({ updatedAt: -1 })
@@ -74,7 +149,7 @@ export const getProducts = async (req, res) => {
       .lean();
 
     return res.status(200).json(products);
-  } catch (error) {
+  } catch {
     return res.status(500).json({ message: "Error al obtener productos" });
   }
 };
@@ -92,7 +167,7 @@ export const getProductById = async (req, res) => {
     if (!doc) return res.status(404).json({ error: "no encontrado" });
 
     return res.status(200).json(doc);
-  } catch (e) {
+  } catch {
     return res.status(500).json({ message: "Error al obtener producto" });
   }
 };
@@ -108,7 +183,7 @@ export const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: "No encontrado" });
 
     return res.status(200).json({ message: "Producto borrado" });
-  } catch (e) {
+  } catch {
     return res.status(500).json({ message: "Error al borrar producto" });
   }
 };
