@@ -6,7 +6,7 @@ export const addProduct = async (req, res) => {
   try {
     const payload = req.body;
 
-    // Array desde FileMaker: bulk upsert por titulo
+    // Array desde FileMaker: bulk upsert por titulo (el payload debe traer 'sku' único)
     if (Array.isArray(payload)) {
       const bulkOps = payload.map((item) => ({
         updateOne: {
@@ -38,7 +38,6 @@ export const addProduct = async (req, res) => {
       message: r.upsertedCount ? "Producto creado." : "Producto actualizado.",
     });
   } catch (error) {
-    // Manejo elegante de índice único (E11000)
     if (error?.code === 11000) {
       return res.status(409).json({
         message: "Título duplicado: ya existe un producto con ese título.",
@@ -62,9 +61,9 @@ export const getProducts = async (req, res) => {
     } = req.query;
 
     const q = {};
-    if (sku) q["productos.sku"] = sku; // usa índice
-    if (NroParte) q.NroParte = NroParte; // usa índice
-    if (printerFmId) q.compatibles = printerFmId; // conservamos tu filtro existente
+    if (sku) q.sku = sku; // ahora es campo plano
+    if (NroParte) q.NroParte = NroParte;
+    if (printerFmId) q.compatibles = printerFmId; // se mantiene tu filtro existente
     if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo = stock > 0
 
     const lim = Math.min(parseInt(limit, 10) || 48, 5000);
