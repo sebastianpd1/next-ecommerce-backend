@@ -6,6 +6,12 @@ const compatibleSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Variantes (no-kit): cada variante tiene su propio stock/cantidad
+const varianteSchema = new mongoose.Schema(
+  { sku: String, color: String, cantidad: { type: Number, default: 0 } },
+  { _id: false }
+);
+
 const productSchema = new mongoose.Schema(
   {
     id: { type: String, index: true }, // id externo (FM/ML)
@@ -15,15 +21,29 @@ const productSchema = new mongoose.Schema(
     marca: String,
     precio: Number,
 
-    // ÚNICO SKU por producto (garantizado por FileMaker)
+    // SKU canónico:
+    // - KIT  => top-level (ej: "K-HP310X4")
+    // - NO KIT => productos[0].sku (primera variante)
     sku: { type: String, index: true },
 
-    // Stock global (activo si stock > 0)
+    // Stock "activación" (server calcula):
+    // - KIT => stock = cantidad (top-level)
+    // - NO KIT => stock = suma(productos[].cantidad)
     stock: { type: Number, default: 0 },
 
+    // Para KIT: cantidad top-level
+    cantidad: { type: Number, default: 0 },
+
     descripcion: String,
-    compatibles: [compatibleSchema],
-    fotos: [String],
+
+    // Variantes (solo no-kit): [{ sku, color, cantidad }]
+    productos: { type: [varianteSchema], default: [] },
+
+    // Compatibilidades
+    compatibles: { type: [compatibleSchema], default: [] },
+
+    // Fotos
+    fotos: { type: [String], default: [] },
   },
   { timestamps: true }
 );
@@ -34,6 +54,7 @@ productSchema.index({ NroParte: 1 });
 productSchema.index({ "compatibles.sku": 1 });
 productSchema.index({ "compatibles.impresora": 1 });
 productSchema.index({ "compatibles.marca": 1 });
+productSchema.index({ "productos.sku": 1 });
 productSchema.index({ marca: 1 });
 
 export default mongoose.models.Product ||

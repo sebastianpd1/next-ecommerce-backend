@@ -2,41 +2,70 @@
 import Product from "../models/Product.js";
 
 /**
- * Normaliza el payload proveniente de FileMaker a nuestro modelo:
- * - sku: si hay auxiliar (item.sku y no es el placeholder) úsalo; si no, usa productos[0].sku.
- * - productos: mapea kitsPivot a [{ sku, color }] filtrando vacíos.
- * - compatibles: mantiene [{ sku, marca, impresora, categoria }] (sin tocar otras props).
- * - stock/precio: fuerza a Number (acepta "2" como string).
+ * Normaliza el payload proveniente de FileMaker a nuestro modelo EXACTO:
+ * - KIT: sku top-level "K-..." y cantidad top-level.
+ * - NO KIT: variantes en productos[{ sku, color, cantidad }]; sku canónico = productos[0].sku.
+ * - stock: KIT => cantidad; NO KIT => suma(variantes[].cantidad).
+ * - precio/stock/cantidad forzados a Number.
  */
 function normalizeItem(item) {
-  const AUX_PLACEHOLDER = "SKU_AUXILIAR_KITS_SI_NO_ES_KIT_ESTO_VACIO";
+  const isKit =
+    typeof item?.sku === "string" &&
+    item.sku.trim().toUpperCase().startsWith("K-");
 
-  const auxSkuRaw = (item?.sku ?? "").trim();
-  const auxSku = auxSkuRaw && auxSkuRaw !== AUX_PLACEHOLDER ? auxSkuRaw : "";
-
+  // Variantes (no-kit): [{ sku, color, cantidad }]
   const productos = Array.isArray(item?.productos)
     ? item.productos
         .map((x) => {
           const sku = (x?.sku ?? "").trim();
+          if (!sku) return null;
           const color = typeof x?.color === "string" ? x.color : undefined;
-          return sku ? { sku, ...(color ? { color } : {}) } : null;
+          const cantidad =
+            typeof x?.cantidad === "number"
+              ? x.cantidad
+              : Number(x?.cantidad ?? 0);
+          return {
+            sku,
+            ...(color ? { color } : {}),
+            cantidad: Number.isFinite(cantidad) ? cantidad : 0,
+          };
         })
         .filter(Boolean)
     : [];
 
-  const canonicalSku = auxSku || productos[0]?.sku || "";
+  // SKU canónico
+  const canonicalSku = isKit
+    ? (item?.sku ?? "").trim()
+    : (productos[0]?.sku ?? "").trim();
+
   if (!canonicalSku) {
     const t = item?.titulo || "(sin titulo)";
     throw new Error(
-      `SKU requerido para "${t}": envía sku auxiliar o productos[0].sku`
+      `SKU requerido para "${t}": en KIT usar sku top-level "K-...", en NO KIT usar productos[0].sku`
     );
   }
 
-  const stockNum =
-    typeof item?.stock === "number" ? item.stock : Number(item?.stock ?? 0);
+  // Cantidades y stock calculado
+  const cantidadTop =
+    typeof item?.cantidad === "number"
+      ? item.cantidad
+      : Number(item?.cantidad ?? 0);
+  const stockFromVariantes = productos.reduce(
+    (s, v) => s + (Number(v?.cantidad) || 0),
+    0
+  );
+
+  const stock = isKit
+    ? Number.isFinite(cantidadTop)
+      ? cantidadTop
+      : 0
+    : stockFromVariantes;
+
+  // Precio
   const precioNum =
     typeof item?.precio === "number" ? item.precio : Number(item?.precio ?? 0);
 
+  // Compatibilidades
   const compatibles = Array.isArray(item?.compatibles)
     ? item.compatibles.map((c) => ({
         sku: typeof c?.sku === "string" ? c.sku : undefined,
@@ -56,17 +85,16 @@ function normalizeItem(item) {
     marca: item?.marca ?? undefined,
     precio: Number.isFinite(precioNum) ? precioNum : 0,
 
-    // clave de venta
+    // Claves de venta / stock
     sku: canonicalSku,
-
-    // stock global (activo si > 0)
-    stock: Number.isFinite(stockNum) ? stockNum : 0,
+    cantidad: isKit ? (Number.isFinite(cantidadTop) ? cantidadTop : 0) : 0,
+    stock: Number.isFinite(stock) ? stock : 0,
 
     descripcion: item?.descripcion ?? undefined,
 
-    // subtablas
-    productos, // kitsPivot normalizado
-    compatibles, // compatibilidades (no se usan para el checkout)
+    // Subtablas
+    productos, // variantes (no-kit)
+    compatibles,
 
     fotos,
   };
@@ -124,7 +152,7 @@ export const addProduct = async (req, res) => {
   }
 };
 
-/** Listado — por defecto solo productos con stock > 0 */
+/** Listado — por defecto solo productos activos (stock > 0) */
 export const getProducts = async (req, res) => {
   try {
     const {
@@ -136,10 +164,10 @@ export const getProducts = async (req, res) => {
     } = req.query;
 
     const q = {};
-    if (sku) q.sku = sku; // campo top-level
-    if (NroParte) q.NroParte = NroParte; // índice existente
-    if (printerFmId) q["compatibles.impresora"] = printerFmId; // usa índice compatibilidades
-    if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo = stock > 0
+    if (sku) q.sku = sku; // canónico
+    if (NroParte) q.NroParte = NroParte;
+    if (printerFmId) q["compatibles.impresora"] = printerFmId;
+    if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo = stock > 0 (kit o suma de variantes)
 
     const lim = Math.min(parseInt(limit, 10) || 12, 5000);
 
