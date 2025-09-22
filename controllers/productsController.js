@@ -2,70 +2,70 @@
 import Product from "../models/Product.js";
 
 /**
- * Normaliza el payload proveniente de FileMaker a nuestro modelo EXACTO:
- * - KIT: sku top-level "K-..." y cantidad top-level.
- * - NO KIT: variantes en productos[{ sku, color, cantidad }]; sku canónico = productos[0].sku.
- * - stock: KIT => cantidad; NO KIT => suma(variantes[].cantidad).
- * - precio/stock/cantidad forzados a Number.
+ * Normaliza payload de FileMaker (formato fijo que envías):
+ * - KIT / MONO:
+ *    - sku top-level "K-..." para kit, o sku vacío para mono
+ *    - stock = Number(item.stock)
+ * - VARIANTES:
+ *    - productos: [{ sku, color, stock }]
+ *    - sku canónico = productos[0].sku
+ *    - stock = suma(productos[].stock)  (desactiva solo si TODAS están en 0)
+ * - precio/stock forzados a Number (aceptan string)
+ * - campos extra como "skuA" se ignoran
  */
 function normalizeItem(item) {
-  const isKit =
-    typeof item?.sku === "string" &&
-    item.sku.trim().toUpperCase().startsWith("K-");
+  const topSku = (item?.sku ?? "").trim();
+  const isKit = topSku.toUpperCase().startsWith("K-");
 
-  // Variantes (no-kit): [{ sku, color, cantidad }]
+  // Variantes con stock propio
   const productos = Array.isArray(item?.productos)
     ? item.productos
         .map((x) => {
           const sku = (x?.sku ?? "").trim();
           if (!sku) return null;
           const color = typeof x?.color === "string" ? x.color : undefined;
-          const cantidad =
-            typeof x?.cantidad === "number"
-              ? x.cantidad
-              : Number(x?.cantidad ?? 0);
+          const vStockRaw = x?.stock ?? 0; // FM manda "1" o number
+          const vStock =
+            typeof vStockRaw === "number" ? vStockRaw : Number(vStockRaw);
           return {
             sku,
             ...(color ? { color } : {}),
-            cantidad: Number.isFinite(cantidad) ? cantidad : 0,
+            stock: Number.isFinite(vStock) ? vStock : 0,
           };
         })
         .filter(Boolean)
     : [];
 
   // SKU canónico
-  const canonicalSku = isKit
-    ? (item?.sku ?? "").trim()
-    : (productos[0]?.sku ?? "").trim();
+  const canonicalSku = isKit ? topSku : (productos[0]?.sku ?? "").trim();
 
   if (!canonicalSku) {
     const t = item?.titulo || "(sin titulo)";
     throw new Error(
-      `SKU requerido para "${t}": en KIT usar sku top-level "K-...", en NO KIT usar productos[0].sku`
+      `SKU requerido para "${t}": en KIT usar sku "K-...", en NO KIT usar productos[0].sku`
     );
   }
-
-  // Cantidades y stock calculado
-  const cantidadTop =
-    typeof item?.cantidad === "number"
-      ? item.cantidad
-      : Number(item?.cantidad ?? 0);
-  const stockFromVariantes = productos.reduce(
-    (s, v) => s + (Number(v?.cantidad) || 0),
-    0
-  );
-
-  const stock = isKit
-    ? Number.isFinite(cantidadTop)
-      ? cantidadTop
-      : 0
-    : stockFromVariantes;
 
   // Precio
   const precioNum =
     typeof item?.precio === "number" ? item.precio : Number(item?.precio ?? 0);
 
-  // Compatibilidades
+  // Stock (activador único)
+  const topStockRaw = item?.stock ?? 0;
+  const topStock =
+    typeof topStockRaw === "number" ? topStockRaw : Number(topStockRaw);
+
+  const sumVariantes = productos.reduce(
+    (s, v) => s + (Number(v?.stock) || 0),
+    0
+  );
+
+  // Regla:
+  // - KIT / MONO: usa stock top-level
+  // - VARIANTES: usa suma de variantes (desactiva solo si todas 0)
+  const stock = productos.length > 0 && !isKit ? sumVariantes : topStock;
+
+  // Compatibilidades / fotos tal cual
   const compatibles = Array.isArray(item?.compatibles)
     ? item.compatibles.map((c) => ({
         sku: typeof c?.sku === "string" ? c.sku : undefined,
@@ -85,17 +85,17 @@ function normalizeItem(item) {
     marca: item?.marca ?? undefined,
     precio: Number.isFinite(precioNum) ? precioNum : 0,
 
-    // Claves de venta / stock
+    // clave de venta
     sku: canonicalSku,
-    cantidad: isKit ? (Number.isFinite(cantidadTop) ? cantidadTop : 0) : 0,
+
+    // activador único
     stock: Number.isFinite(stock) ? stock : 0,
 
     descripcion: item?.descripcion ?? undefined,
 
-    // Subtablas
-    productos, // variantes (no-kit)
+    // subtablas
+    productos, // [{ sku, color, stock }]
     compatibles,
-
     fotos,
   };
 }
@@ -105,10 +105,8 @@ export const addProduct = async (req, res) => {
   try {
     const payload = req.body;
 
-    // Array: bulk upsert por título
     if (Array.isArray(payload)) {
       const docs = payload.map(normalizeItem);
-
       const bulkOps = docs.map((doc) => ({
         updateOne: {
           filter: { titulo: doc.titulo },
@@ -116,9 +114,7 @@ export const addProduct = async (req, res) => {
           upsert: true,
         },
       }));
-
       const result = await Product.bulkWrite(bulkOps, { ordered: false });
-
       return res.status(201).json({
         message: `Procesados ${
           (result.modifiedCount || 0) + (result.upsertedCount || 0)
@@ -128,14 +124,12 @@ export const addProduct = async (req, res) => {
       });
     }
 
-    // Uno: upsert por título
     const doc = normalizeItem(payload);
     const r = await Product.updateOne(
       { titulo: doc.titulo },
       { $set: doc },
       { upsert: true }
     );
-
     return res.status(201).json({
       message: r.upsertedCount ? "Producto creado." : "Producto actualizado.",
     });
@@ -167,7 +161,7 @@ export const getProducts = async (req, res) => {
     if (sku) q.sku = sku; // canónico
     if (NroParte) q.NroParte = NroParte;
     if (printerFmId) q["compatibles.impresora"] = printerFmId;
-    if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo = stock > 0 (kit o suma de variantes)
+    if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo
 
     const lim = Math.min(parseInt(limit, 10) || 12, 5000);
 
@@ -203,7 +197,7 @@ export const getProductById = async (req, res) => {
 /** Borrado por título */
 export const deleteProduct = async (req, res) => {
   try {
-    const { titulo } = req.query; // ?titulo=...
+    const { titulo } = req.query;
     if (!titulo) return res.status(400).json({ message: "Falta titulo" });
 
     const r = await Product.deleteOne({ titulo });

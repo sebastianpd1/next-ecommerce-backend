@@ -6,9 +6,13 @@ const compatibleSchema = new mongoose.Schema(
   { _id: false }
 );
 
-// Variantes (no-kit): cada variante tiene su propio stock/cantidad
+// Variantes (no-kit) con stock propio
 const varianteSchema = new mongoose.Schema(
-  { sku: String, color: String, cantidad: { type: Number, default: 0 } },
+  {
+    sku: String,
+    color: String,
+    stock: { type: Number, default: 0 }, // <-- NUEVO: stock por variante
+  },
   { _id: false }
 );
 
@@ -26,17 +30,14 @@ const productSchema = new mongoose.Schema(
     // - NO KIT => productos[0].sku (primera variante)
     sku: { type: String, index: true },
 
-    // Stock "activación" (server calcula):
-    // - KIT => stock = cantidad (top-level)
-    // - NO KIT => stock = suma(productos[].cantidad)
+    // Activador único (0 => desactivado):
+    // - KIT / MONO: viene de item.stock (FM)
+    // - VARIANTES: suma(productos[].stock)
     stock: { type: Number, default: 0 },
-
-    // Para KIT: cantidad top-level
-    cantidad: { type: Number, default: 0 },
 
     descripcion: String,
 
-    // Variantes (solo no-kit): [{ sku, color, cantidad }]
+    // Variantes (solo no-kit)
     productos: { type: [varianteSchema], default: [] },
 
     // Compatibilidades
