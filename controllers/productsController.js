@@ -3,21 +3,16 @@ import Product from "../models/Product.js";
 
 /**
  * Normaliza payload de FileMaker (formato fijo que envías):
- * - KIT / MONO:
- *    - sku top-level "K-..." para kit, o sku vacío para mono
- *    - stock = Number(item.stock)
- * - VARIANTES:
- *    - productos: [{ sku, color, stock }]
- *    - sku canónico = productos[0].sku
- *    - stock = suma(productos[].stock)  (desactiva solo si TODAS están en 0)
- * - precio/stock forzados a Number (aceptan string)
- * - campos extra como "skuA" se ignoran
+ * - KIT (sku "K-...") => mantiene sku/stock top-level tal como llegan.
+ * - Producto simple (una sola variante en productos[]) => promote sku/stock de esa variante al top-level.
+ * - Producto con variantes (productos[].length > 1) => sku/stock solo a nivel variante; top-level queda sin campos.
+ * - precio/stock forzados a Number (aceptan string).
  */
 function normalizeItem(item) {
   const topSku = (item?.sku ?? "").trim();
   const isKit = topSku.toUpperCase().startsWith("K-");
 
-  // Variantes con stock propio
+  // Variantes con stock propio (si llega vacío, queda [])
   const productos = Array.isArray(item?.productos)
     ? item.productos
         .map((x) => {
@@ -36,34 +31,17 @@ function normalizeItem(item) {
         .filter(Boolean)
     : [];
 
-  // SKU canónico
-  const canonicalSku = isKit ? topSku : (productos[0]?.sku ?? "").trim();
-
-  if (!canonicalSku) {
-    const t = item?.titulo || "(sin titulo)";
-    throw new Error(
-      `SKU requerido para "${t}": en KIT usar sku "K-...", en NO KIT usar productos[0].sku`
-    );
-  }
+  const hasSingleVariant = productos.length === 1;
+  const hasMultipleVariants = productos.length > 1;
 
   // Precio
   const precioNum =
     typeof item?.precio === "number" ? item.precio : Number(item?.precio ?? 0);
 
-  // Stock (activador único)
+  // Stock top-level recibido
   const topStockRaw = item?.stock ?? 0;
   const topStock =
     typeof topStockRaw === "number" ? topStockRaw : Number(topStockRaw);
-
-  const sumVariantes = productos.reduce(
-    (s, v) => s + (Number(v?.stock) || 0),
-    0
-  );
-
-  // Regla:
-  // - KIT / MONO: usa stock top-level
-  // - VARIANTES: usa suma de variantes (desactiva solo si todas 0)
-  const stock = productos.length > 0 && !isKit ? sumVariantes : topStock;
 
   // Compatibilidades / fotos tal cual
   const compatibles = Array.isArray(item?.compatibles)
@@ -77,27 +55,56 @@ function normalizeItem(item) {
 
   const fotos = Array.isArray(item?.fotos) ? item.fotos : [];
 
-  return {
+  const doc = {
     id: item?.id ?? undefined,
     titulo: item?.titulo,
     modelo: item?.modelo ?? undefined,
     NroParte: item?.NroParte ?? undefined,
     marca: item?.marca ?? undefined,
     precio: Number.isFinite(precioNum) ? precioNum : 0,
-
-    // clave de venta
-    sku: canonicalSku,
-
-    // activador único
-    stock: Number.isFinite(stock) ? stock : 0,
-
     descripcion: item?.descripcion ?? undefined,
-
-    // subtablas
-    productos, // [{ sku, color, stock }]
+    productos,
     compatibles,
     fotos,
   };
+
+  const unset = {};
+
+  if (isKit) {
+    if (!topSku) {
+      const t = item?.titulo || "(sin titulo)";
+      throw new Error(
+        `SKU requerido para "${t}": los kits deben traer sku "K-..." en el top-level`
+      );
+    }
+    doc.sku = topSku;
+    doc.stock = Number.isFinite(topStock) ? topStock : 0;
+  } else if (hasSingleVariant) {
+    const [variant] = productos;
+    if (!variant?.sku) {
+      const t = item?.titulo || "(sin titulo)";
+      throw new Error(
+        `SKU requerido para "${t}": la única variante debe incluir un sku`
+      );
+    }
+    doc.sku = variant.sku;
+    doc.stock = Number.isFinite(variant.stock) ? variant.stock : 0;
+  } else if (hasMultipleVariants) {
+    unset.sku = 1;
+    unset.stock = 1;
+  } else {
+    // Producto sin variantes explícitas (mono sin arreglo) => usa top-level
+    if (!topSku) {
+      const t = item?.titulo || "(sin titulo)";
+      throw new Error(
+        `SKU requerido para "${t}": en productos simples usa sku top-level o variantes`
+      );
+    }
+    doc.sku = topSku;
+    doc.stock = Number.isFinite(topStock) ? topStock : 0;
+  }
+
+  return { doc, unset };
 }
 
 /** Crea/actualiza productos (FileMaker) */
@@ -106,14 +113,18 @@ export const addProduct = async (req, res) => {
     const payload = req.body;
 
     if (Array.isArray(payload)) {
-      const docs = payload.map(normalizeItem);
-      const bulkOps = docs.map((doc) => ({
-        updateOne: {
-          filter: { titulo: doc.titulo },
-          update: { $set: doc },
-          upsert: true,
-        },
-      }));
+      const entries = payload.map(normalizeItem);
+      const bulkOps = entries.map(({ doc, unset }) => {
+        const update = { $set: doc };
+        if (unset && Object.keys(unset).length > 0) update.$unset = unset;
+        return {
+          updateOne: {
+            filter: { titulo: doc.titulo },
+            update,
+            upsert: true,
+          },
+        };
+      });
       const result = await Product.bulkWrite(bulkOps, { ordered: false });
       return res.status(201).json({
         message: `Procesados ${
@@ -124,10 +135,12 @@ export const addProduct = async (req, res) => {
       });
     }
 
-    const doc = normalizeItem(payload);
+    const { doc, unset } = normalizeItem(payload);
+    const update = { $set: doc };
+    if (unset && Object.keys(unset).length > 0) update.$unset = unset;
     const r = await Product.updateOne(
       { titulo: doc.titulo },
-      { $set: doc },
+      update,
       { upsert: true }
     );
     return res.status(201).json({
@@ -161,7 +174,9 @@ export const getProducts = async (req, res) => {
     if (sku) q.sku = sku; // canónico
     if (NroParte) q.NroParte = NroParte;
     if (printerFmId) q["compatibles.impresora"] = printerFmId;
-    if (!include_out_of_stock) q.stock = { $gt: 0 }; // activo
+    if (!include_out_of_stock) {
+      q.$or = [{ stock: { $gt: 0 } }, { "productos.stock": { $gt: 0 } }];
+    }
 
     const lim = Math.min(parseInt(limit, 10) || 12, 5000);
 
@@ -183,7 +198,12 @@ export const getProductById = async (req, res) => {
     const { id } = req.params;
 
     const base = { id: String(id) };
-    const filter = include_out_of_stock ? base : { ...base, stock: { $gt: 0 } };
+    const filter = include_out_of_stock
+      ? base
+      : {
+          ...base,
+          $or: [{ stock: { $gt: 0 } }, { "productos.stock": { $gt: 0 } }],
+        };
 
     const doc = await Product.findOne(filter).lean();
     if (!doc) return res.status(404).json({ error: "no encontrado" });
