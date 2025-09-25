@@ -22,6 +22,7 @@ import mpWebhook from "./routes/webhooks.mercadopago.js";
 const app = express();
 
 // Body parser (sube el límite si mandas arrays grandes)
+app.use("/api/webhooks/mercadopago", express.raw({ type: "application/json" }));
 app.use(express.json({ limit: "10mb" }));
 
 // Rutas
