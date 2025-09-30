@@ -87,22 +87,45 @@ export async function createOrder(req, res) {
       source: typeof req.body?.source === "string" ? req.body.source : "web",
       raw: req.body,
     };
+    const orderId = req.body?.orderId;
+    let order = null;
+    if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
+      order = await Order.findByIdAndUpdate(
+        orderId,
+        {
+          $set: {
+            status: "pending",
+            items,
+            totals,
+            customer,
+            delivery,
+            documentType: customer.documentType,
+            meta,
+            updatedAt: new Date(),
+          },
+          $unset: { lines: 1, total: 1, currency: 1 },
+        },
+        { new: true }
+      );
+    }
 
-    const order = await Order.create({
-      status: "pending",
-      items,
-      totals,
-      customer,
-      delivery,
-      documentType: customer.documentType,
-      meta,
-    });
+    if (!order) {
+      order = await Order.create({
+        status: "pending",
+        items,
+        totals,
+        customer,
+        delivery,
+        documentType: customer.documentType,
+        meta,
+      });
+    }
 
     return res.status(201).json({
       orderId: order._id.toString(),
-      totals,
-      customer,
-      delivery,
+      totals: order.totals,
+      customer: order.customer,
+      delivery: order.delivery,
       status: order.status,
     });
   } catch (error) {
@@ -152,4 +175,3 @@ export async function listOrders(req, res) {
     return res.status(500).json({ error: "Error obteniendo órdenes" });
   }
 }
-
