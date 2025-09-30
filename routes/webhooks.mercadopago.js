@@ -2,6 +2,55 @@
 import express from "express";
 import crypto from "crypto";
 import Order from "../models/Order.js";
+import Product from "../models/Product.js";
+
+const STATUS_PENDING = "pending";
+const STATUS_PAID = "paid";
+const STATUS_FAILED = "failed";
+const STATUS_CANCELLED = "cancelled";
+
+async function deductStock(orderItems) {
+  if (!Array.isArray(orderItems) || orderItems.length === 0) return;
+
+  for (const item of orderItems) {
+    const sku = typeof item?.sku === "string" ? item.sku.trim() : "";
+    const qtyRaw = Number(item?.qty);
+    const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : 0;
+    if (!sku || qty <= 0) continue;
+
+    const product = await Product.findOne({
+      $or: [{ sku }, { "productos.sku": sku }],
+    });
+    if (!product) continue;
+
+    let updated = false;
+
+    if (Array.isArray(product.productos) && product.productos.length) {
+      const idx = product.productos.findIndex((v) => v?.sku === sku);
+      if (idx >= 0) {
+        const current = Number(product.productos[idx]?.stock) || 0;
+        product.productos[idx].stock = Math.max(0, current - qty);
+        updated = true;
+      }
+
+      const sum = product.productos.reduce(
+        (total, variant) => total + (Number(variant?.stock) || 0),
+        0
+      );
+      product.stock = sum;
+    }
+
+    if (!updated) {
+      const current = Number(product.stock) || 0;
+      product.stock = Math.max(0, current - qty);
+      updated = true;
+    }
+
+    if (updated) {
+      await product.save();
+    }
+  }
+}
 
 const router = express.Router();
 
@@ -102,13 +151,14 @@ router.post("/", async (req, res) => {
     const order = await Order.findById(external_reference);
     if (!order) return res.status(200).json({ ok: true, noOrder: true });
 
-    if (order.status === "PAID")
+    if (order.status === STATUS_PAID)
       return res.status(200).json({ ok: true, alreadyPaid: true });
 
     if (status === "approved") {
-      if (Math.round(order.total) !== Math.round(paidAmount)) {
+      const expectedTotal = Math.round(order.totals?.total || order.total || 0);
+      if (expectedTotal !== Math.round(paidAmount)) {
         await Order.findByIdAndUpdate(order._id, {
-          status: "FAILED",
+          status: STATUS_FAILED,
           payment: {
             provider: "mercadopago",
             mp: { id: String(payment?.id || data.id), status, raw: payment },
@@ -118,17 +168,17 @@ router.post("/", async (req, res) => {
       }
 
       await Order.findByIdAndUpdate(order._id, {
-        status: "PAID",
+        status: STATUS_PAID,
         payment: {
           provider: "mercadopago",
           mp: { id: String(payment?.id || data.id), status, raw: payment },
         },
       });
 
-      // TODO: emitir DTE (TÜU) y descontar stock
+      await deductStock(order.items || order.lines || []);
     } else if (status === "rejected") {
       await Order.findByIdAndUpdate(order._id, {
-        status: "FAILED",
+        status: STATUS_FAILED,
         payment: {
           provider: "mercadopago",
           mp: { id: String(payment?.id || data.id), status, raw: payment },
@@ -136,7 +186,7 @@ router.post("/", async (req, res) => {
       });
     } else {
       await Order.findByIdAndUpdate(order._id, {
-        status: "UNPAID",
+        status: STATUS_PENDING,
         payment: {
           provider: "mercadopago",
           mp: { id: String(payment?.id || data.id), status, raw: payment },

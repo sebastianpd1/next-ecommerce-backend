@@ -89,6 +89,14 @@ router.post("/preference", requireApiKey, async (req, res) => {
           : "",
     };
 
+    if (!normalizedCustomer.name || !normalizedCustomer.rut || !normalizedCustomer.phone) {
+      return res.status(400).json({ error: "Datos del cliente incompletos" });
+    }
+
+    if (delivery.method === "despacho" && !delivery.address) {
+      return res.status(400).json({ error: "Dirección requerida para despacho" });
+    }
+
     const totals = {
       items: lines.reduce((s, l) => s + l.qty, 0),
       subtotal: total,
