@@ -4,6 +4,8 @@ import mongoose from "mongoose";
 import { requireApiKey } from "../middleware/auth.js";
 import Order from "../models/Order.js";
 
+const STATUS_PENDING = "pending";
+
 const router = express.Router();
 
 function escapeRx(s) {
@@ -22,7 +24,16 @@ router.post("/preference", requireApiKey, async (req, res) => {
     if (!process.env.MP_ACCESS_TOKEN) {
       return res.status(500).json({ error: "MP_ACCESS_TOKEN no configurado" });
     }
-    const { items = [], customer = {}, shipping = {} } = req.body || {};
+    const {
+      items = [],
+      customer: incomingCustomer = {},
+      deliveryMethod,
+      address,
+      documentType,
+      orderId,
+      shipping = {},
+      source,
+    } = req.body || {};
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "items requerido" });
     }
@@ -45,27 +56,78 @@ router.post("/preference", requireApiKey, async (req, res) => {
       const lineSku =
         it.sku || (Array.isArray(p.productos) && p.productos[0]?.sku) || "";
 
+      const price = p.precio;
       lines.push({
         sku: lineSku,
-        title: p.titulo, // título real desde BD
-        price: p.precio, // precio desde BD
+        title: p.titulo,
+        price,
         qty,
+        subtotal: price * qty,
       });
     }
 
-    const total = lines.reduce((s, l) => s + l.price * l.qty, 0);
+    const total = lines.reduce((s, l) => s + l.subtotal, 0);
 
-    // Crea Order UNPAID con el modelo
-    const order = await Order.create({
-      status: "UNPAID",
-      currency: "CLP",
+    const normalizedCustomer = {
+      name: typeof incomingCustomer?.name === "string" ? incomingCustomer.name.trim() : "",
+      rut: typeof incomingCustomer?.rut === "string" ? incomingCustomer.rut.trim() : "",
+      phone: typeof incomingCustomer?.phone === "string" ? incomingCustomer.phone.trim() : "",
+      email: typeof incomingCustomer?.email === "string" ? incomingCustomer.email.trim() : "",
+      documentType: ["boleta", "factura"].includes(String(documentType || incomingCustomer?.documentType).toLowerCase())
+        ? String(documentType || incomingCustomer?.documentType).toLowerCase()
+        : "boleta",
+    };
+
+    const deliveryMethodNormalized = ["retiro", "despacho"].includes(String(deliveryMethod).toLowerCase())
+      ? String(deliveryMethod).toLowerCase()
+      : "retiro";
+    const delivery = {
+      method: deliveryMethodNormalized,
+      address:
+        deliveryMethodNormalized === "despacho" && typeof address === "string"
+          ? address.trim()
+          : "",
+    };
+
+    const totals = {
+      items: lines.reduce((s, l) => s + l.qty, 0),
+      subtotal: total,
       total,
-      lines,
-      customer,
+      currency: "CLP",
+    };
+
+    const meta = {
+      source: typeof source === "string" ? source : "web",
       shipping,
-    });
-    const orderId = String(order._id);
-    await Order.findByIdAndUpdate(orderId, { external_reference: orderId });
+    };
+
+    let persistedOrderId = null;
+    if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
+      const update = {
+        status: STATUS_PENDING,
+        items: lines,
+        totals,
+        customer: normalizedCustomer,
+        delivery,
+        documentType: normalizedCustomer.documentType,
+        meta,
+      };
+      const updated = await Order.findByIdAndUpdate(orderId, update, { new: true });
+      persistedOrderId = updated ? updated._id.toString() : null;
+    }
+
+    if (!persistedOrderId) {
+      const order = await Order.create({
+        status: STATUS_PENDING,
+        items: lines,
+        totals,
+        customer: normalizedCustomer,
+        delivery,
+        documentType: normalizedCustomer.documentType,
+        meta,
+      });
+      persistedOrderId = order._id.toString();
+    }
 
     // Arma preference
     const mpItems = lines.map((l) => ({
@@ -77,7 +139,7 @@ router.post("/preference", requireApiKey, async (req, res) => {
 
     const payload = {
       items: mpItems,
-      external_reference: orderId,
+      external_reference: persistedOrderId,
       auto_return: "approved",
       back_urls: {
         success: `${process.env.PUBLIC_SITE_URL}/pago/exito`,
@@ -102,7 +164,7 @@ router.post("/preference", requireApiKey, async (req, res) => {
     if (!mpRes.ok) return res.status(mpRes.status).json(mpJson);
 
     const redirectUrl = mpJson.init_point || mpJson.sandbox_init_point;
-    return res.json({ redirectUrl, orderId, preferenceId: mpJson.id });
+    return res.json({ redirectUrl, orderId: persistedOrderId, preferenceId: mpJson.id });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
