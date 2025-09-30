@@ -55,6 +55,15 @@ const OrderSchema = new mongoose.Schema(
       type: String,
       enum: ["pending", "paid", "failed", "cancelled"],
       default: "pending",
+      set: (value) => {
+        if (typeof value !== "string") return "pending";
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "unpaid") return "pending";
+        if (["pending", "paid", "failed", "cancelled"].includes(normalized)) {
+          return normalized;
+        }
+        return "pending";
+      },
     },
     items: { type: [LineSchema], default: [] },
     totals: { type: TotalsSchema, default: () => ({}) },
