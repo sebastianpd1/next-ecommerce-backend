@@ -3,10 +3,48 @@ import mongoose from "mongoose";
 
 const LineSchema = new mongoose.Schema(
   {
-    sku: String,
-    title: { type: String, required: true },
-    price: { type: Number, required: true }, // CLP
+    sku: { type: String, trim: true },
+    title: { type: String, required: true, trim: true },
+    price: { type: Number, required: true, min: 0 },
     qty: { type: Number, required: true, min: 1 },
+    subtotal: { type: Number, required: true, min: 0 },
+  },
+  { _id: false }
+);
+
+const CustomerSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    rut: { type: String, required: true, trim: true },
+    phone: { type: String, required: true, trim: true },
+    email: { type: String, trim: true },
+    documentType: {
+      type: String,
+      enum: ["boleta", "factura"],
+      default: "boleta",
+    },
+  },
+  { _id: false }
+);
+
+const DeliverySchema = new mongoose.Schema(
+  {
+    method: {
+      type: String,
+      enum: ["retiro", "despacho"],
+      default: "retiro",
+    },
+    address: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const TotalsSchema = new mongoose.Schema(
+  {
+    items: { type: Number, default: 0, min: 0 },
+    subtotal: { type: Number, default: 0, min: 0 },
+    total: { type: Number, default: 0, min: 0 },
+    currency: { type: String, default: "CLP", trim: true },
   },
   { _id: false }
 );
@@ -15,23 +53,27 @@ const OrderSchema = new mongoose.Schema(
   {
     status: {
       type: String,
-      enum: ["UNPAID", "PAID", "FAILED"],
-      default: "UNPAID",
+      enum: ["pending", "paid", "failed", "cancelled"],
+      default: "pending",
     },
-    currency: { type: String, default: "CLP" },
-    total: { type: Number, default: 0 },
-    lines: { type: [LineSchema], default: [] },
-    external_reference: String, // igual al _id en string
+    items: { type: [LineSchema], default: [] },
+    totals: { type: TotalsSchema, default: () => ({}) },
+    customer: { type: CustomerSchema, required: true },
+    delivery: { type: DeliverySchema, default: () => ({}) },
+    documentType: {
+      type: String,
+      enum: ["boleta", "factura"],
+      default: "boleta",
+    },
     payment: {
-      provider: String, // "mercadopago"
+      provider: String,
       mp: {
         id: String,
         status: String,
         raw: Object,
       },
     },
-    customer: { type: Object, default: {} },
-    shipping: { type: Object, default: {} },
+    meta: { type: Object, default: () => ({}) },
   },
   { timestamps: true }
 );
