@@ -34,6 +34,15 @@ router.post("/preference", requireApiKey, async (req, res) => {
       shipping = {},
       source,
     } = req.body || {};
+
+    if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ error: "orderId requerido" });
+    }
+
+    const existingOrder = await Order.findById(orderId);
+    if (!existingOrder) {
+      return res.status(404).json({ error: "Orden no encontrada" });
+    }
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "items requerido" });
     }
@@ -109,33 +118,24 @@ router.post("/preference", requireApiKey, async (req, res) => {
       shipping,
     };
 
-    let persistedOrderId = null;
-    if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
-      const update = {
-        status: STATUS_PENDING,
-        items: lines,
-        totals,
-        customer: normalizedCustomer,
-        delivery,
-        documentType: normalizedCustomer.documentType,
-        meta,
-      };
-      const updated = await Order.findByIdAndUpdate(orderId, update, { new: true });
-      persistedOrderId = updated ? updated._id.toString() : null;
-    }
+    await Order.findByIdAndUpdate(
+      orderId,
+      {
+        $set: {
+          status: STATUS_PENDING,
+          items: lines,
+          totals,
+          customer: normalizedCustomer,
+          delivery,
+          documentType: normalizedCustomer.documentType,
+          meta,
+          updatedAt: new Date(),
+        },
+        $unset: { lines: 1, total: 1, currency: 1 },
+      }
+    );
 
-    if (!persistedOrderId) {
-      const order = await Order.create({
-        status: STATUS_PENDING,
-        items: lines,
-        totals,
-        customer: normalizedCustomer,
-        delivery,
-        documentType: normalizedCustomer.documentType,
-        meta,
-      });
-      persistedOrderId = order._id.toString();
-    }
+    const persistedOrderId = orderId;
 
     // Arma preference
     const mpItems = lines.map((l) => ({
