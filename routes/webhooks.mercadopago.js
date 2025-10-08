@@ -110,14 +110,13 @@ router.post("/", async (req, res) => {
     const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
     const signatureHeader = req.header("x-mp-signature") || req.header("x-meli-signature");
 
-    if (!secret) {
-      console.error("MP_WEBHOOK_SECRET no configurado: rechazada la petición de webhook");
-      return res.status(500).json({ ok: false, error: "configuracion invalida" });
-    }
-
-    if (!isValidSignature({ signatureHeader, secret, rawBody })) {
-      console.warn("Firma de Mercado Pago inválida", { signatureHeader });
-      return res.status(401).json({ ok: false, error: "firma invalida" });
+    if (secret) {
+      if (!isValidSignature({ signatureHeader, secret, rawBody })) {
+        console.warn("Firma de Mercado Pago inválida", { signatureHeader });
+        return res.status(401).json({ ok: false, error: "firma invalida" });
+      }
+    } else {
+      console.warn("MP_WEBHOOK_SECRET no configurado: aceptando webhook sin validar firma");
     }
 
     let payload;

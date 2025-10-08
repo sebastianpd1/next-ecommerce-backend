@@ -89,27 +89,32 @@ export async function createOrder(req, res) {
     };
     const orderId = req.body?.orderId;
     let order = null;
-    if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
+
+    if (orderId) {
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({ error: "orderId inválido" });
+      }
+
+      const update = {
+        status: "pending",
+        items,
+        totals,
+        customer,
+        delivery,
+        documentType: customer.documentType,
+        meta,
+        updatedAt: new Date(),
+      };
+
       order = await Order.findByIdAndUpdate(
         orderId,
         {
-          $set: {
-            status: "pending",
-            items,
-            totals,
-            customer,
-            delivery,
-            documentType: customer.documentType,
-            meta,
-            updatedAt: new Date(),
-          },
+          $set: update,
           $unset: { lines: 1, total: 1, currency: 1 },
         },
-        { new: true }
+        { new: true, upsert: true, setDefaultsOnInsert: true }
       );
-    }
-
-    if (!order) {
+    } else {
       order = await Order.create({
         status: "pending",
         items,
